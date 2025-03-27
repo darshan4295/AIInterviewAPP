@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Video, Calendar, Clock, User } from 'lucide-react';
+import { Video, Calendar, Clock, User, FileText, BarChart } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { VideoRecorder } from '../../components/VideoRecorder';
+import { TranscriptAnalyzer } from '../../components/TranscriptAnalyzer';
 import type { Database } from '../../lib/database.types';
 
 type Interview = Database['public']['Tables']['interviews']['Row'];
@@ -45,6 +47,16 @@ export function VideoInterview() {
           if (interviewData.score !== null) {
             setScore(interviewData.score);
           }
+          if (interviewData.transcript) {
+            setTranscript(interviewData.transcript);
+            setShowAnalysis(true);
+          }
+          if (interviewData.recording_url) {
+            setRecordingUrl(interviewData.recording_url);
+          }
+          if (interviewData.ai_analysis) {
+            setAiAnalysis(interviewData.ai_analysis);
+          }
         } else {
           // Fetch all video interviews
           const { data: interviewsData, error: interviewsError } = await supabase
@@ -78,6 +90,9 @@ export function VideoInterview() {
         .update({
           feedback,
           score,
+          transcript,
+          recording_url: recordingUrl,
+          ai_analysis: aiAnalysis,
           status: 'completed'
         })
         .eq('id', interview.id);
@@ -102,6 +117,34 @@ export function VideoInterview() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleRecordingComplete = (recordingUrl: string, transcript: string) => {
+    setRecordingUrl(recordingUrl);
+    setTranscript(transcript);
+    setShowRecorder(false);
+    setShowAnalysis(true);
+  };
+
+  const handleAnalysisComplete = (analysisScore: number, analysis: any) => {
+    setScore(analysisScore);
+    setAiAnalysis(analysis);
+    
+    // Generate feedback based on analysis
+    const feedbackText = `
+Score: ${analysisScore}/100
+
+Strengths:
+${analysis.strengths.map((s: string) => `- ${s}`).join('\n')}
+
+Areas for Improvement:
+${analysis.weaknesses.map((w: string) => `- ${w}`).join('\n')}
+
+Summary:
+${analysis.summary}
+    `;
+    
+    setFeedback(feedbackText.trim());
   };
 
   if (isLoading) {
@@ -231,6 +274,61 @@ export function VideoInterview() {
               </div>
             </div>
           </div>
+
+          {interview.status !== 'completed' && !showRecorder && !transcript && (
+            <div className="flex justify-center py-4">
+              <button
+                onClick={() => setShowRecorder(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Start Video Interview
+              </button>
+            </div>
+          )}
+
+          {showRecorder && (
+            <div className="border-t border-gray-200 pt-6">
+              <h4 className="text-lg font-medium text-gray-800 mb-4">Video Interview Session</h4>
+              <VideoRecorder onRecordingComplete={handleRecordingComplete} />
+            </div>
+          )}
+
+          {recordingUrl && (
+            <div className="border-t border-gray-200 pt-6">
+              <h4 className="text-lg font-medium text-gray-800 mb-4">Interview Recording</h4>
+              <video 
+                src={recordingUrl} 
+                controls 
+                className="w-full rounded-lg"
+                style={{ maxHeight: '400px' }}
+              />
+            </div>
+          )}
+
+          {transcript && (
+            <div className="border-t border-gray-200 pt-6">
+              <div className="flex items-center mb-4">
+                <FileText className="h-5 w-5 text-gray-500 mr-2" />
+                <h4 className="text-lg font-medium text-gray-800">Interview Transcript</h4>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 max-h-64 overflow-y-auto">
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{transcript}</p>
+              </div>
+            </div>
+          )}
+
+          {showAnalysis && transcript && (
+            <div className="border-t border-gray-200 pt-6">
+              <div className="flex items-center mb-4">
+                <BarChart className="h-5 w-5 text-gray-500 mr-2" />
+                <h4 className="text-lg font-medium text-gray-800">AI Analysis</h4>
+              </div>
+              <TranscriptAnalyzer 
+                transcript={transcript} 
+                onAnalysisComplete={handleAnalysisComplete} 
+              />
+            </div>
+          )}
 
           <div className="border-t border-gray-200 pt-6">
             <div className="space-y-4">

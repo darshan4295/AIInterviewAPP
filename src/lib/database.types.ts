@@ -59,6 +59,9 @@ export type Database = {
           scheduled_at: string
           feedback: string | null
           score: number | null
+          transcript: string | null
+          recording_url: string | null
+          ai_analysis: Json | null
           created_at: string
           updated_at: string
         }
@@ -70,6 +73,9 @@ export type Database = {
           scheduled_at: string
           feedback?: string | null
           score?: number | null
+          transcript?: string | null
+          recording_url?: string | null
+          ai_analysis?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -81,6 +87,9 @@ export type Database = {
           scheduled_at?: string
           feedback?: string | null
           score?: number | null
+          transcript?: string | null
+          recording_url?: string | null
+          ai_analysis?: Json | null
           created_at?: string
           updated_at?: string
         }
