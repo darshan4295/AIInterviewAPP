@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Video, Calendar, Clock, User } from 'lucide-react';
+import { Video, Calendar, Clock, User, Phone, PhoneOff, Mic, MicOff, Camera, CameraOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { WebRTCService } from '../../lib/webrtc';
 import type { Database } from '../../lib/database.types';
 
 type Interview = Database['public']['Tables']['interviews']['Row'];
@@ -23,11 +24,19 @@ export function VideoInterview() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Video call states
+  const [isInCall, setIsInCall] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const webrtcRef = useRef<WebRTCService | null>(null);
+
   useEffect(() => {
     async function fetchData() {
       try {
         if (id) {
-          // Fetch single interview details
           const { data: interviewData, error: interviewError } = await supabase
             .from('interviews')
             .select('*, candidates(*)')
@@ -46,7 +55,6 @@ export function VideoInterview() {
             setScore(interviewData.score);
           }
         } else {
-          // Fetch all video interviews
           const { data: interviewsData, error: interviewsError } = await supabase
             .from('interviews')
             .select('*, candidates(*)')
@@ -64,7 +72,79 @@ export function VideoInterview() {
     }
 
     fetchData();
+
+    return () => {
+      if (webrtcRef.current) {
+        webrtcRef.current.cleanup();
+      }
+    };
   }, [id]);
+
+  const startVideoCall = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+      
+      setStream(mediaStream);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = mediaStream;
+      }
+
+      // Initialize WebRTC
+      if (id) {
+        const userId = (await supabase.auth.getUser()).data.user?.id;
+        if (!userId) throw new Error('User not authenticated');
+
+        webrtcRef.current = new WebRTCService(
+          id,
+          userId,
+          (remoteStream) => {
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = remoteStream;
+            }
+          }
+        );
+
+        await webrtcRef.current.startCall(mediaStream);
+      }
+
+      setIsInCall(true);
+    } catch (err) {
+      setError('Failed to access camera and microphone');
+    }
+  };
+
+  const endVideoCall = () => {
+    if (webrtcRef.current) {
+      webrtcRef.current.cleanup();
+      webrtcRef.current = null;
+    }
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setIsInCall(false);
+  };
+
+  const toggleMute = () => {
+    if (stream) {
+      stream.getAudioTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const toggleCamera = () => {
+    if (stream) {
+      stream.getVideoTracks().forEach(track => {
+        track.enabled = !track.enabled;
+      });
+      setIsCameraOff(!isCameraOff);
+    }
+  };
 
   const handleSave = async () => {
     if (!interview) return;
@@ -84,7 +164,6 @@ export function VideoInterview() {
 
       if (updateError) throw updateError;
 
-      // Update candidate status if needed
       if (interview.type === 'video' && candidate) {
         const { error: candidateError } = await supabase
           .from('candidates')
@@ -120,7 +199,6 @@ export function VideoInterview() {
     );
   }
 
-  // Show list view when no ID is provided
   if (!id) {
     return (
       <div className="space-y-6">
@@ -178,7 +256,6 @@ export function VideoInterview() {
     );
   }
 
-  // Show interview details when ID is provided
   if (!interview || !candidate) {
     return (
       <div className="bg-red-50 text-red-700 p-4 rounded-md">
@@ -189,10 +266,59 @@ export function VideoInterview() {
 
   return (
     <div className="space-y-6">
+      {isInCall && (
+        <div className="fixed inset-0 bg-black z-50 flex flex-col">
+          <div className="flex-1 relative">
+            <video
+              ref={remoteVideoRef}
+              className="w-full h-full object-cover"
+              autoPlay
+              playsInline
+            />
+            <video
+              ref={localVideoRef}
+              className="absolute bottom-4 right-4 w-64 h-48 object-cover rounded-lg shadow-lg"
+              autoPlay
+              playsInline
+              muted
+            />
+          </div>
+          <div className="bg-gray-900 p-4 flex items-center justify-center space-x-4">
+            <button
+              onClick={toggleMute}
+              className={`p-4 rounded-full ${isMuted ? 'bg-red-600' : 'bg-gray-600'} hover:opacity-80`}
+            >
+              {isMuted ? <MicOff className="text-white" /> : <Mic className="text-white" />}
+            </button>
+            <button
+              onClick={toggleCamera}
+              className={`p-4 rounded-full ${isCameraOff ? 'bg-red-600' : 'bg-gray-600'} hover:opacity-80`}
+            >
+              {isCameraOff ? <CameraOff className="text-white" /> : <Camera className="text-white" />}
+            </button>
+            <button
+              onClick={endVideoCall}
+              className="p-4 rounded-full bg-red-600 hover:bg-red-700"
+            >
+              <PhoneOff className="text-white" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-medium text-gray-800">Video Interview</h3>
+            {!isInCall && interview.status === 'scheduled' && (
+              <button
+                onClick={startVideoCall}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Phone size={20} />
+                <span>Start Video Call</span>
+              </button>
+            )}
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               interview.status === 'completed' ? 'bg-green-100 text-green-800' :
               interview.status === 'cancelled' ? 'bg-red-100 text-red-800' :
