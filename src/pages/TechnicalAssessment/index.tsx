@@ -70,6 +70,20 @@ export function TechnicalAssessment() {
   const [error, setError] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<CodingQuestion | null>(null);
   const [code, setCode] = useState<string>('');
+  const [codeOutput, setCodeOutput] = useState<string>('');
+
+  const runCode = () => {
+    try {
+      // For security reasons, we're not actually executing the code
+      // In a real application, you would send this to a backend service
+      // that executes the code in a sandboxed environment
+      
+      // For now, we'll just simulate an output
+      setCodeOutput(`Running code for: ${selectedQuestion?.title}\n\nSimulated output:\nTest cases passed: 2/3`);
+    } catch (error) {
+      setCodeOutput(`Error: ${(error as Error).message}`);
+    }
+  };
 
   useEffect(() => {
     async function fetchData() {
@@ -295,9 +309,30 @@ export function TechnicalAssessment() {
                     <div>
                       <h5 className="text-sm font-medium text-gray-700 mb-2">Solution</h5>
                       <div className="relative">
-                        <pre className="p-4 bg-gray-900 rounded-lg text-white font-mono text-sm overflow-auto">
-                          <code>{code}</code>
-                        </pre>
+                        <textarea
+                          value={code}
+                          onChange={(e) => setCode(e.target.value)}
+                          className="p-4 bg-gray-900 rounded-lg text-white font-mono text-sm w-full h-64 resize-none"
+                          disabled={interview.status === 'completed'}
+                        />
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            onClick={() => runCode()}
+                            disabled={interview.status === 'completed' || !code.trim()}
+                            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center"
+                          >
+                            <Code className="w-4 h-4 mr-2" />
+                            Run Code
+                          </button>
+                        </div>
+                        {codeOutput && (
+                          <div className="mt-3">
+                            <h5 className="text-sm font-medium text-gray-700 mb-2">Output</h5>
+                            <pre className="p-4 bg-gray-100 rounded-lg text-gray-800 font-mono text-sm overflow-auto">
+                              {codeOutput}
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
