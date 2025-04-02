@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Code, CheckCircle, XCircle } from 'lucide-react';
+import { Code, CheckCircle, XCircle, Calendar, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { CodeEditor } from '../../components/CodeEditor';
 import type { Database } from '../../lib/database.types';
 
 type Interview = Database['public']['Tables']['interviews']['Row'];
 type Candidate = Database['public']['Tables']['candidates']['Row'];
+
+interface InterviewWithCandidate extends Interview {
+  candidates: Candidate;
+}
 
 interface CodingQuestion {
   id: number;
@@ -29,7 +34,7 @@ const CODING_QUESTIONS: CodingQuestion[] = [
       'Input: nums = [3,2,4], target = 6\nOutput: [1,2]',
       'Input: nums = [3,3], target = 6\nOutput: [0,1]'
     ],
-    sampleCode: 'function twoSum(nums: number[], target: number): number[] {\n  // Your code here\n}'
+    sampleCode: 'function twoSum(nums, target) {\n  // Your code here\n}'
   },
   {
     id: 2,
@@ -42,7 +47,7 @@ const CODING_QUESTIONS: CodingQuestion[] = [
       'Input: s = "()[]{}"\nOutput: true',
       'Input: s = "(]"\nOutput: false'
     ],
-    sampleCode: 'function isValid(s: string): boolean {\n  // Your code here\n}'
+    sampleCode: 'function isValid(s) {\n  // Your code here\n}'
   },
   {
     id: 3,
@@ -53,13 +58,14 @@ const CODING_QUESTIONS: CodingQuestion[] = [
     testCases: [
       'Input: ["LRUCache", "put", "put", "get", "put", "get", "put", "get", "get", "get"]\n[[2], [1, 1], [2, 2], [1], [3, 3], [2], [4, 4], [1], [3], [4]]\nOutput: [null, null, null, 1, null, -1, null, -1, 3, 4]'
     ],
-    sampleCode: 'class LRUCache {\n  constructor(capacity: number) {\n    // Your code here\n  }\n\n  get(key: number): number {\n    // Your code here\n  }\n\n  put(key: number, value: number): void {\n    // Your code here\n  }\n}'
+    sampleCode: 'class LRUCache {\n  constructor(capacity) {\n    // Your code here\n  }\n\n  get(key) {\n    // Your code here\n  }\n\n  put(key, value) {\n    // Your code here\n  }\n}'
   }
 ];
 
 export function TechnicalAssessment() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [interviews, setInterviews] = useState<InterviewWithCandidate[]>([]);
   const [interview, setInterview] = useState<Interview | null>(null);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -69,29 +75,38 @@ export function TechnicalAssessment() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<CodingQuestion | null>(null);
-  const [code, setCode] = useState<string>('');
+  const [selectedLanguage, setSelectedLanguage] = useState('javascript');
 
   useEffect(() => {
     async function fetchData() {
-      if (!id) return;
-
       try {
-        const { data: interviewData, error: interviewError } = await supabase
-          .from('interviews')
-          .select('*, candidates(*)')
-          .eq('id', id)
-          .single();
+        if (id) {
+          const { data: interviewData, error: interviewError } = await supabase
+            .from('interviews')
+            .select('*, candidates(*)')
+            .eq('id', id)
+            .single();
 
-        if (interviewError) throw interviewError;
-        
-        setInterview(interviewData);
-        setCandidate(interviewData.candidates as Candidate);
-        
-        if (interviewData.feedback) {
-          setFeedback(interviewData.feedback);
-        }
-        if (interviewData.score !== null) {
-          setScore(interviewData.score);
+          if (interviewError) throw interviewError;
+          
+          setInterview(interviewData);
+          setCandidate(interviewData.candidates as Candidate);
+          
+          if (interviewData.feedback) {
+            setFeedback(interviewData.feedback);
+          }
+          if (interviewData.score !== null) {
+            setScore(interviewData.score);
+          }
+        } else {
+          const { data: interviewsData, error: interviewsError } = await supabase
+            .from('interviews')
+            .select('*, candidates(*)')
+            .eq('type', 'technical')
+            .order('scheduled_at', { ascending: true });
+
+          if (interviewsError) throw interviewsError;
+          setInterviews(interviewsData as InterviewWithCandidate[]);
         }
       } catch (err) {
         setError((err as Error).message);
@@ -105,7 +120,6 @@ export function TechnicalAssessment() {
 
   const handleQuestionSelect = (question: CodingQuestion) => {
     setSelectedQuestion(question);
-    setCode(question.sampleCode || '');
   };
 
   const handleQuestionScoreChange = (questionId: number, points: number) => {
@@ -162,10 +176,75 @@ export function TechnicalAssessment() {
     );
   }
 
-  if (error || !interview || !candidate) {
+  if (error) {
     return (
       <div className="bg-red-50 text-red-700 p-4 rounded-md">
-        {error || 'Interview not found'}
+        {error}
+      </div>
+    );
+  }
+
+  if (!id) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-800">Technical Assessments</h3>
+          </div>
+          <div className="divide-y divide-gray-200">
+            {interviews.length === 0 ? (
+              <div className="px-6 py-8 text-center text-gray-500">
+                No technical assessments scheduled.
+              </div>
+            ) : (
+              interviews.map((interview) => (
+                <div
+                  key={interview.id}
+                  className="px-6 py-4 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => navigate(`/interview/technical/${interview.id}`)}
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center space-x-4">
+                      <div className="flex-shrink-0">
+                        <Code className="h-6 w-6 text-gray-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {interview.candidates.name}
+                        </p>
+                        <div className="mt-1 flex items-center space-x-4 text-sm text-gray-500">
+                          <div className="flex items-center">
+                            <Calendar className="h-4 w-4 mr-1" />
+                            {new Date(interview.scheduled_at).toLocaleDateString()}
+                          </div>
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 mr-1" />
+                            {new Date(interview.scheduled_at).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      interview.status === 'completed' ? 'bg-green-100 text-green-800' :
+                      interview.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      {interview.status.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!interview || !candidate) {
+    return (
+      <div className="bg-red-50 text-red-700 p-4 rounded-md">
+        Interview not found
       </div>
     );
   }
@@ -294,11 +373,11 @@ export function TechnicalAssessment() {
 
                     <div>
                       <h5 className="text-sm font-medium text-gray-700 mb-2">Solution</h5>
-                      <div className="relative">
-                        <pre className="p-4 bg-gray-900 rounded-lg text-white font-mono text-sm overflow-auto">
-                          <code>{code}</code>
-                        </pre>
-                      </div>
+                      <CodeEditor
+                        initialCode={selectedQuestion.sampleCode || ''}
+                        language={selectedLanguage}
+                        onLanguageChange={setSelectedLanguage}
+                      />
                     </div>
                   </div>
                 ) : (
