@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Video, Calendar, Clock, User, Phone, PhoneOff, Mic, MicOff, Camera, CameraOff } from 'lucide-react';
+import { Video, Calendar, Clock, Phone } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { WebRTCService } from '../../lib/webrtc';
 import { TestCall } from '../../components/TestCall';
+import { VideoCall } from '../../components/VideoCall';
 import type { Database } from '../../lib/database.types';
 
 type Interview = Database['public']['Tables']['interviews']['Row'];
@@ -31,11 +32,9 @@ export function VideoInterview() {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [showTestCall, setShowTestCall] = useState(false);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const webrtcRef = useRef<WebRTCService | null>(null);
-  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -122,15 +121,10 @@ export function VideoInterview() {
           user.id,
           userRole,
           (localStream) => {
-            if (localVideoRef.current) {
-              localVideoRef.current.srcObject = localStream;
-            }
+            setStream(localStream);
           },
           (remoteStream) => {
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = remoteStream;
-              setHasRemoteVideo(!!remoteStream);
-            }
+            setRemoteStream(remoteStream);
           }
         );
 
@@ -154,7 +148,7 @@ export function VideoInterview() {
       setStream(null);
     }
     setIsInCall(false);
-    setHasRemoteVideo(false);
+    setRemoteStream(null);
   };
 
   const toggleMute = () => {
@@ -295,55 +289,15 @@ export function VideoInterview() {
       )}
 
       {isInCall && (
-        <div className="fixed inset-0 bg-black z-50 flex flex-col">
-          <div className="flex-1 relative">
-            {hasRemoteVideo ? (
-              <>
-                <video
-                  ref={remoteVideoRef}
-                  className="w-full h-full object-cover"
-                  autoPlay
-                  playsInline
-                />
-                <video
-                  ref={localVideoRef}
-                  className="absolute bottom-4 right-4 w-64 h-48 object-cover rounded-lg shadow-lg"
-                  autoPlay
-                  playsInline
-                  muted
-                />
-              </>
-            ) : (
-              <video
-                ref={localVideoRef}
-                className="w-full h-full object-cover"
-                autoPlay
-                playsInline
-                muted
-              />
-            )}
-          </div>
-          <div className="bg-gray-900 p-4 flex items-center justify-center space-x-4">
-            <button
-              onClick={toggleMute}
-              className={`p-4 rounded-full ${isMuted ? 'bg-red-600' : 'bg-gray-600'} hover:opacity-80`}
-            >
-              {isMuted ? <MicOff className="text-white" /> : <Mic className="text-white" />}
-            </button>
-            <button
-              onClick={toggleCamera}
-              className={`p-4 rounded-full ${isCameraOff ? 'bg-red-600' : 'bg-gray-600'} hover:opacity-80`}
-            >
-              {isCameraOff ? <CameraOff className="text-white" /> : <Camera className="text-white" />}
-            </button>
-            <button
-              onClick={endVideoCall}
-              className="p-4 rounded-full bg-red-600 hover:bg-red-700"
-            >
-              <PhoneOff className="text-white" />
-            </button>
-          </div>
-        </div>
+        <VideoCall
+          localStream={stream}
+          remoteStream={remoteStream}
+          isMuted={isMuted}
+          isCameraOff={isCameraOff}
+          onToggleMute={toggleMute}
+          onToggleCamera={toggleCamera}
+          onEndCall={endVideoCall}
+        />
       )}
 
       <div className="bg-white rounded-lg shadow">
