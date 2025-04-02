@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Code, CheckCircle, XCircle, Calendar, Clock } from 'lucide-react';
+import { Code, Calendar, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { CodeEditor } from '../../components/CodeEditor';
 import type { Database } from '../../lib/database.types';
@@ -20,6 +20,13 @@ interface CodingQuestion {
   points: number;
   testCases?: string[];
   sampleCode?: string;
+}
+
+interface CodeSubmission {
+  questionId: number;
+  code: string;
+  language: string;
+  submittedAt: string;
 }
 
 const CODING_QUESTIONS: CodingQuestion[] = [
@@ -76,10 +83,26 @@ export function TechnicalAssessment() {
   const [error, setError] = useState<string | null>(null);
   const [selectedQuestion, setSelectedQuestion] = useState<CodingQuestion | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState('javascript');
+  const [userRole, setUserRole] = useState<'interviewer' | 'candidate'>('interviewer');
+  const [submissions, setSubmissions] = useState<Record<number, CodeSubmission>>({});
 
   useEffect(() => {
     async function fetchData() {
       try {
+        // Get current user's role
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          setUserRole(profile.role as 'interviewer' | 'candidate');
+        }
+
         if (id) {
           const { data: interviewData, error: interviewError } = await supabase
             .from('interviews')
@@ -97,6 +120,12 @@ export function TechnicalAssessment() {
           }
           if (interviewData.score !== null) {
             setScore(interviewData.score);
+          }
+
+          // Load submissions if they exist
+          const submissionsData = localStorage.getItem(`submissions_${id}`);
+          if (submissionsData) {
+            setSubmissions(JSON.parse(submissionsData));
           }
         } else {
           const { data: interviewsData, error: interviewsError } = await supabase
@@ -128,6 +157,23 @@ export function TechnicalAssessment() {
       const totalScore = Object.values(newScores).reduce((sum, score) => sum + score, 0);
       setScore(totalScore);
       return newScores;
+    });
+  };
+
+  const handleCodeSubmit = async (questionId: number, code: string) => {
+    if (!id) return;
+
+    const submission: CodeSubmission = {
+      questionId,
+      code,
+      language: selectedLanguage,
+      submittedAt: new Date().toISOString()
+    };
+
+    setSubmissions(prev => {
+      const newSubmissions = { ...prev, [questionId]: submission };
+      localStorage.setItem(`submissions_${id}`, JSON.stringify(newSubmissions));
+      return newSubmissions;
     });
   };
 
@@ -241,14 +287,111 @@ export function TechnicalAssessment() {
     );
   }
 
-  if (!interview || !candidate) {
+  // Candidate view
+  if (userRole === 'candidate') {
     return (
-      <div className="bg-red-50 text-red-700 p-4 rounded-md">
-        Interview not found
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-800">Technical Assessment</h3>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                interview?.status === 'completed' ? 'bg-green-100 text-green-800' :
+                interview?.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                'bg-blue-100 text-blue-800'
+              }`}>
+                {interview?.status.toUpperCase()}
+              </span>
+            </div>
+          </div>
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <h4 className="text-sm font-medium text-gray-500 mb-2">Assessment Details</h4>
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-900">
+                    <span className="font-medium">Scheduled for:</span>{' '}
+                    {interview && new Date(interview.scheduled_at).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-gray-900">
+                    <span className="font-medium">Type:</span> Technical Assessment
+                  </p>
+                  {interview?.status === 'completed' && (
+                    <p className="text-sm text-gray-900">
+                      <span className="font-medium">Score:</span> {interview.score}/100
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-6">
+              <div className="space-y-6">
+                {CODING_QUESTIONS.map((question, index) => {
+                  const submission = submissions[question.id];
+                  return (
+                    <div key={question.id} className="bg-white border border-gray-200 rounded-lg p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="text-lg font-medium text-gray-900">
+                            Question {index + 1}: {question.title}
+                          </h3>
+                          <span className={`mt-2 inline-block px-2 py-1 text-xs font-medium rounded ${
+                            question.difficulty === 'easy' ? 'bg-green-100 text-green-800' :
+                            question.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {question.difficulty.toUpperCase()}
+                          </span>
+                        </div>
+                        {submission && (
+                          <div className="text-sm text-gray-500">
+                            Submitted: {new Date(submission.submittedAt).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="text-gray-600 mb-4">{question.description}</p>
+
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">Test Cases:</h4>
+                          <div className="space-y-2">
+                            {question.testCases?.map((testCase, i) => (
+                              <pre key={i} className="p-3 bg-gray-50 rounded-lg text-sm font-mono">
+                                {testCase}
+                              </pre>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">Your Solution:</h4>
+                          <CodeEditor
+                            initialCode={submission?.code || question.sampleCode || ''}
+                            language={submission?.language || selectedLanguage}
+                            onLanguageChange={setSelectedLanguage}
+                            onSubmit={
+                              interview?.status !== 'completed'
+                                ? (code) => handleCodeSubmit(question.id, code)
+                                : undefined
+                            }
+                            readOnly={interview?.status === 'completed' || !!submission}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
+  // Interviewer view
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow">
@@ -256,11 +399,11 @@ export function TechnicalAssessment() {
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-medium text-gray-800">Technical Assessment</h3>
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              interview.status === 'completed' ? 'bg-green-100 text-green-800' :
-              interview.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+              interview?.status === 'completed' ? 'bg-green-100 text-green-800' :
+              interview?.status === 'cancelled' ? 'bg-red-100 text-red-800' :
               'bg-blue-100 text-blue-800'
             }`}>
-              {interview.status.toUpperCase()}
+              {interview?.status.toUpperCase()}
             </span>
           </div>
         </div>
@@ -270,13 +413,13 @@ export function TechnicalAssessment() {
               <h4 className="text-sm font-medium text-gray-500 mb-2">Candidate Information</h4>
               <div className="space-y-2">
                 <p className="text-sm text-gray-900">
-                  <span className="font-medium">Name:</span> {candidate.name}
+                  <span className="font-medium">Name:</span> {candidate?.name}
                 </p>
                 <p className="text-sm text-gray-900">
-                  <span className="font-medium">Email:</span> {candidate.email}
+                  <span className="font-medium">Email:</span> {candidate?.email}
                 </p>
                 <p className="text-sm text-gray-900">
-                  <span className="font-medium">Experience:</span> {candidate.experience} years
+                  <span className="font-medium">Experience:</span> {candidate?.experience} years
                 </p>
               </div>
             </div>
@@ -285,7 +428,7 @@ export function TechnicalAssessment() {
               <div className="space-y-2">
                 <p className="text-sm text-gray-900">
                   <span className="font-medium">Scheduled for:</span>{' '}
-                  {new Date(interview.scheduled_at).toLocaleString()}
+                  {interview && new Date(interview.scheduled_at).toLocaleString()}
                 </p>
                 <p className="text-sm text-gray-900">
                   <span className="font-medium">Type:</span> Technical Assessment
@@ -297,59 +440,69 @@ export function TechnicalAssessment() {
           <div className="border-t border-gray-200 pt-6">
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-1 space-y-4">
-                <h4 className="text-sm font-medium text-gray-700">Coding Questions</h4>
-                {CODING_QUESTIONS.map((question) => (
-                  <div
-                    key={question.id}
-                    className={`p-4 rounded-lg border cursor-pointer transition-colors ${
-                      selectedQuestion?.id === question.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-300'
-                    }`}
-                    onClick={() => handleQuestionSelect(question)}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <h5 className="text-sm font-medium text-gray-900">{question.title}</h5>
-                      <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
-                        question.difficulty === 'easy' ? 'bg-green-100 text-green-800' :
-                        question.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {question.difficulty.toUpperCase()}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 line-clamp-2">{question.description}</p>
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className="text-sm text-gray-500">{question.points} points</span>
-                      <div className="flex items-center space-x-2">
-                        <label className="inline-flex items-center">
-                          <input
-                            type="radio"
-                            name={`question-${question.id}`}
-                            value={question.points}
-                            checked={questionScores[question.id] === question.points}
-                            onChange={() => handleQuestionScoreChange(question.id, question.points)}
-                            className="text-blue-600 focus:ring-blue-500"
-                            disabled={interview.status === 'completed'}
-                          />
-                          <CheckCircle className="ml-1 w-4 h-4 text-green-600" />
-                        </label>
-                        <label className="inline-flex items-center">
-                          <input
-                            type="radio"
-                            name={`question-${question.id}`}
-                            value={0}
-                            checked={questionScores[question.id] === 0}
-                            onChange={() => handleQuestionScoreChange(question.id, 0)}
-                            className="text-blue-600 focus:ring-blue-500"
-                            disabled={interview.status === 'completed'}
-                          />
-                          <XCircle className="ml-1 w-4 h-4 text-red-600" />
-                        </label>
+                <h4 className="text-sm font-medium text-gray-700">Questions</h4>
+                {CODING_QUESTIONS.map((question) => {
+                  const submission = submissions[question.id];
+                  return (
+                    <div
+                      key={question.id}
+                      className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                        selectedQuestion?.id === question.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300'
+                      }`}
+                      onClick={() => handleQuestionSelect(question)}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h5 className="text-sm font-medium text-gray-900">{question.title}</h5>
+                        <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${
+                          question.difficulty === 'easy' ? 'bg-green-100 text-green-800' :
+                          question.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {question.difficulty.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 line-clamp-2">{question.description}</p>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-sm text-gray-500">{question.points} points</span>
+                        {submission ? (
+                          <span className="text-sm text-green-600">Submitted</span>
+                        ) : (
+                          <span className="text-sm text-yellow-600">Pending</span>
+                        )}
+                      </div>
+                      <div className="mt-2">
+                        <div className="flex items-center space-x-4">
+                          <label className="inline-flex items-center">
+                            <input
+                              type="radio"
+                              name={`question-${question.id}`}
+                              value={question.points}
+                              checked={questionScores[question.id] === question.points}
+                              onChange={() => handleQuestionScoreChange(question.id, question.points)}
+                              className="text-blue-600 focus:ring-blue-500"
+                              disabled={interview?.status === 'completed'}
+                            />
+                            <span className="ml-2 text-sm text-green-600">Pass</span>
+                          </label>
+                          <label className="inline-flex items-center">
+                            <input
+                              type="radio"
+                              name={`question-${question.id}`}
+                              value={0}
+                              checked={questionScores[question.id] === 0}
+                              onChange={() => handleQuestionScoreChange(question.id, 0)}
+                              className="text-blue-600 focus:ring-blue-500"
+                              disabled={interview?.status === 'completed'}
+                            />
+                            <span className="ml-2 text-sm text-red-600">Fail</span>
+                          </label>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="col-span-2">
@@ -372,12 +525,21 @@ export function TechnicalAssessment() {
                     </div>
 
                     <div>
-                      <h5 className="text-sm font-medium text-gray-700 mb-2">Solution</h5>
-                      <CodeEditor
-                        initialCode={selectedQuestion.sampleCode || ''}
-                        language={selectedLanguage}
-                        onLanguageChange={setSelectedLanguage}
-                      />
+                      <h5 className="text-sm font-medium text-gray-700 mb-2">
+                        Candidate's Solution
+                      </h5>
+                      {submissions[selectedQuestion.id] ? (
+                        <CodeEditor
+                          initialCode={submissions[selectedQuestion.id].code}
+                          language={submissions[selectedQuestion.id].language}
+                          onLanguageChange={setSelectedLanguage}
+                          readOnly={true}
+                        />
+                      ) : (
+                        <div className="p-4 bg-gray-50 rounded-lg text-gray-500 text-center">
+                          No submission yet
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -398,7 +560,7 @@ export function TechnicalAssessment() {
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
                   className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  disabled={interview.status === 'completed'}
+                  disabled={interview?.status === 'completed'}
                   placeholder="Enter your feedback about the candidate's technical skills..."
                 />
               </div>
@@ -415,10 +577,10 @@ export function TechnicalAssessment() {
                 </div>
               </div>
 
-              {interview.status !== 'completed' && (
+              {interview?.status !== 'completed' && (
                 <div className="flex justify-end space-x-3">
                   <button
-                    onClick={() => navigate(`/candidates/${candidate.id}`)}
+                    onClick={() => navigate(`/candidates/${candidate?.id}`)}
                     className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                   >
                     Cancel

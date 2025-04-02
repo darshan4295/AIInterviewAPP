@@ -45,6 +45,41 @@ const EVALUATION_CRITERIA: EvaluationCriteria[] = [
   }
 ];
 
+const DISCUSSION_TOPICS = [
+  {
+    title: 'Leadership Experience',
+    questions: [
+      'Can you describe a situation where you had to lead a team through a challenging project?',
+      'How do you motivate team members who are struggling with their tasks?',
+      'What\'s your approach to delegating responsibilities?'
+    ]
+  },
+  {
+    title: 'Decision Making',
+    questions: [
+      'Tell me about a difficult decision you had to make in your previous role.',
+      'How do you handle conflicting priorities?',
+      'What\'s your process for making important decisions?'
+    ]
+  },
+  {
+    title: 'Conflict Resolution',
+    questions: [
+      'How do you handle disagreements with team members?',
+      'Describe a situation where you had to resolve a conflict between team members.',
+      'What\'s your approach to giving constructive feedback?'
+    ]
+  },
+  {
+    title: 'Strategic Thinking',
+    questions: [
+      'How do you approach long-term planning?',
+      'Can you describe a time when you had to pivot your strategy?',
+      'How do you balance short-term goals with long-term objectives?'
+    ]
+  }
+];
+
 export function ManagerialRound() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -54,45 +89,39 @@ export function ManagerialRound() {
   const [feedback, setFeedback] = useState('');
   const [score, setScore] = useState<number | null>(null);
   const [criteriaScores, setCriteriaScores] = useState<Record<number, number>>({});
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<'interviewer' | 'candidate'>('interviewer');
 
   useEffect(() => {
     async function fetchData() {
-      setIsLoading(true);
-      setError(null);
-
       try {
-        if (!id) {
-          // If no ID is provided, fetch all managerial interviews
-          const { data: interviewsData, error: interviewsError } = await supabase
-            .from('interviews')
-            .select(`
-              *,
-              candidates (*)
-            `)
-            .eq('type', 'managerial')
-            .order('scheduled_at', { ascending: true });
+        // Get current user's role
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
 
-          if (interviewsError) throw interviewsError;
-          setInterviews(interviewsData as InterviewWithCandidate[]);
-        } else {
-          // Fetch specific interview
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          setUserRole(profile.role as 'interviewer' | 'candidate');
+        }
+
+        if (id) {
           const { data: interviewData, error: interviewError } = await supabase
             .from('interviews')
-            .select(`
-              *,
-              candidates (*)
-            `)
+            .select('*, candidates(*)')
             .eq('id', id)
             .single();
 
           if (interviewError) throw interviewError;
-          if (!interviewData) throw new Error('Interview not found');
           
           setInterview(interviewData);
-          setCandidate(interviewData.candidates as unknown as Candidate);
+          setCandidate(interviewData.candidates as Candidate);
           
           if (interviewData.feedback) {
             setFeedback(interviewData.feedback);
@@ -108,6 +137,15 @@ export function ManagerialRound() {
             });
             setCriteriaScores(initialScores);
           }
+        } else {
+          const { data: interviewsData, error: interviewsError } = await supabase
+            .from('interviews')
+            .select('*, candidates(*)')
+            .eq('type', 'managerial')
+            .order('scheduled_at', { ascending: true });
+
+          if (interviewsError) throw interviewsError;
+          setInterviews(interviewsData as InterviewWithCandidate[]);
         }
       } catch (err) {
         setError((err as Error).message);
@@ -183,7 +221,6 @@ export function ManagerialRound() {
     );
   }
 
-  // If no ID is provided, show the list of managerial interviews
   if (!id) {
     return (
       <div className="space-y-6">
@@ -249,6 +286,80 @@ export function ManagerialRound() {
     );
   }
 
+  // Candidate view
+  if (userRole === 'candidate') {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-800">Managerial Round</h3>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                interview.status === 'completed' ? 'bg-green-100 text-green-800' :
+                interview.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                'bg-blue-100 text-blue-800'
+              }`}>
+                {interview.status.toUpperCase()}
+              </span>
+            </div>
+          </div>
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <h4 className="text-sm font-medium text-gray-500 mb-2">Interview Details</h4>
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-900">
+                    <span className="font-medium">Scheduled for:</span>{' '}
+                    {new Date(interview.scheduled_at).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-gray-900">
+                    <span className="font-medium">Type:</span> Managerial Round
+                  </p>
+                  {interview.status === 'completed' && (
+                    <p className="text-sm text-gray-900">
+                      <span className="font-medium">Score:</span> {interview.score}/100
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-6">
+              <h4 className="text-lg font-medium text-gray-800 mb-4">Discussion Topics</h4>
+              <div className="space-y-6">
+                {DISCUSSION_TOPICS.map((topic, index) => (
+                  <div key={index} className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h5 className="text-md font-medium text-gray-900 mb-4">{topic.title}</h5>
+                    <ul className="space-y-3">
+                      {topic.questions.map((question, qIndex) => (
+                        <li key={qIndex} className="text-gray-600">
+                          • {question}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6">
+                <h4 className="text-lg font-medium text-gray-800 mb-4">Evaluation Criteria</h4>
+                <div className="space-y-4">
+                  {EVALUATION_CRITERIA.map((criteria) => (
+                    <div key={criteria.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                      <h5 className="text-md font-medium text-gray-900 mb-2">{criteria.name}</h5>
+                      <p className="text-gray-600">{criteria.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Interviewer view
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow">
@@ -295,6 +406,22 @@ export function ManagerialRound() {
           </div>
 
           <div className="border-t border-gray-200 pt-6">
+            <h4 className="text-lg font-medium text-gray-800 mb-4">Discussion Topics</h4>
+            <div className="space-y-6 mb-8">
+              {DISCUSSION_TOPICS.map((topic, index) => (
+                <div key={index} className="bg-white border border-gray-200 rounded-lg p-6">
+                  <h5 className="text-md font-medium text-gray-900 mb-4">{topic.title}</h5>
+                  <ul className="space-y-3">
+                    {topic.questions.map((question, qIndex) => (
+                      <li key={qIndex} className="text-gray-600">
+                        • {question}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
             <h4 className="text-sm font-medium text-gray-700 mb-4">Evaluation Criteria</h4>
             <div className="space-y-6">
               {EVALUATION_CRITERIA.map((criteria) => (
