@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Briefcase, Users, Target, DollarSign } from 'lucide-react';
+import { Briefcase, Calendar, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Database } from '../../lib/database.types';
 
 type Interview = Database['public']['Tables']['interviews']['Row'];
 type Candidate = Database['public']['Tables']['candidates']['Row'];
+
+interface InterviewWithCandidate extends Interview {
+  candidates: Candidate;
+}
 
 interface EvaluationCriteria {
   id: number;
@@ -44,36 +48,66 @@ const EVALUATION_CRITERIA: EvaluationCriteria[] = [
 export function ManagerialRound() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [interviews, setInterviews] = useState<InterviewWithCandidate[]>([]);
   const [interview, setInterview] = useState<Interview | null>(null);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [feedback, setFeedback] = useState('');
   const [score, setScore] = useState<number | null>(null);
   const [criteriaScores, setCriteriaScores] = useState<Record<number, number>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
-      if (!id) return;
+      setIsLoading(true);
+      setError(null);
 
       try {
-        const { data: interviewData, error: interviewError } = await supabase
-          .from('interviews')
-          .select('*, candidates(*)')
-          .eq('id', id)
-          .single();
+        if (!id) {
+          // If no ID is provided, fetch all managerial interviews
+          const { data: interviewsData, error: interviewsError } = await supabase
+            .from('interviews')
+            .select(`
+              *,
+              candidates (*)
+            `)
+            .eq('type', 'managerial')
+            .order('scheduled_at', { ascending: true });
 
-        if (interviewError) throw interviewError;
-        
-        setInterview(interviewData);
-        setCandidate(interviewData.candidates as Candidate);
-        
-        if (interviewData.feedback) {
-          setFeedback(interviewData.feedback);
-        }
-        if (interviewData.score !== null) {
-          setScore(interviewData.score);
+          if (interviewsError) throw interviewsError;
+          setInterviews(interviewsData as InterviewWithCandidate[]);
+        } else {
+          // Fetch specific interview
+          const { data: interviewData, error: interviewError } = await supabase
+            .from('interviews')
+            .select(`
+              *,
+              candidates (*)
+            `)
+            .eq('id', id)
+            .single();
+
+          if (interviewError) throw interviewError;
+          if (!interviewData) throw new Error('Interview not found');
+          
+          setInterview(interviewData);
+          setCandidate(interviewData.candidates as unknown as Candidate);
+          
+          if (interviewData.feedback) {
+            setFeedback(interviewData.feedback);
+          }
+          if (interviewData.score !== null) {
+            setScore(interviewData.score);
+            
+            // Calculate individual criteria scores based on total score
+            const scorePerCriteria = Math.floor(interviewData.score / EVALUATION_CRITERIA.length);
+            const initialScores: Record<number, number> = {};
+            EVALUATION_CRITERIA.forEach(criteria => {
+              initialScores[criteria.id] = scorePerCriteria;
+            });
+            setCriteriaScores(initialScores);
+          }
         }
       } catch (err) {
         setError((err as Error).message);
@@ -96,7 +130,7 @@ export function ManagerialRound() {
   };
 
   const handleSave = async () => {
-    if (!interview) return;
+    if (!interview || !candidate) return;
 
     setIsSaving(true);
     setError(null);
@@ -125,7 +159,7 @@ export function ManagerialRound() {
         if (candidateError) throw candidateError;
       }
 
-      navigate(`/candidates/${candidate?.id}`);
+      navigate(`/candidates/${candidate.id}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -141,10 +175,76 @@ export function ManagerialRound() {
     );
   }
 
-  if (error || !interview || !candidate) {
+  if (error) {
     return (
       <div className="bg-red-50 text-red-700 p-4 rounded-md">
-        {error || 'Interview not found'}
+        {error}
+      </div>
+    );
+  }
+
+  // If no ID is provided, show the list of managerial interviews
+  if (!id) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-800">Managerial Rounds</h3>
+          </div>
+          <div className="divide-y divide-gray-200">
+            {interviews.length === 0 ? (
+              <div className="px-6 py-8 text-center text-gray-500">
+                No managerial rounds scheduled.
+              </div>
+            ) : (
+              interviews.map((interview) => (
+                <div
+                  key={interview.id}
+                  className="px-6 py-4 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => navigate(`/interview/managerial/${interview.id}`)}
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center space-x-4">
+                      <div className="flex-shrink-0">
+                        <Briefcase className="h-6 w-6 text-gray-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {interview.candidates.name}
+                        </p>
+                        <div className="mt-1 flex items-center space-x-4 text-sm text-gray-500">
+                          <div className="flex items-center">
+                            <Calendar className="h-4 w-4 mr-1" />
+                            {new Date(interview.scheduled_at).toLocaleDateString()}
+                          </div>
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 mr-1" />
+                            {new Date(interview.scheduled_at).toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      interview.status === 'completed' ? 'bg-green-100 text-green-800' :
+                      interview.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      {interview.status.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!interview || !candidate) {
+    return (
+      <div className="bg-red-50 text-red-700 p-4 rounded-md">
+        Interview not found
       </div>
     );
   }
@@ -270,7 +370,6 @@ export function ManagerialRound() {
                     onClick={handleSave}
                     disabled={isSaving || !feedback || score === null}
                     className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  
                   >
                     {isSaving ? 'Saving...' : 'Complete Interview'}
                   </button>

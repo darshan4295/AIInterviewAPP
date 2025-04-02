@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signIn, signUp } from '../lib/auth';
+import { signIn, signUp, UserRole } from '../lib/auth';
 
 interface AuthFormProps {
   onSuccess: () => void;
@@ -9,6 +9,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [role, setRole] = useState<UserRole>('interviewer');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -20,12 +21,29 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
     setError(null);
 
     try {
+      // Try to sign up first if in signup mode
       if (isSignUp) {
-        await signUp(formData.email, formData.password);
+        const { user, error: signUpError } = await signUp(formData.email, formData.password, role);
+        
+        // If user already exists, try to sign in instead
+        if (signUpError && (signUpError as any).code === 'user_already_exists') {
+          const { user: signInUser, error: signInError } = await signIn(formData.email, formData.password, role);
+          if (signInError) throw signInError;
+          if (signInUser) {
+            onSuccess();
+            return;
+          }
+        } else if (signUpError) {
+          throw signUpError;
+        }
+        
+        if (user) onSuccess();
       } else {
-        await signIn(formData.email, formData.password);
+        // Regular sign in
+        const { user, error: signInError } = await signIn(formData.email, formData.password, role);
+        if (signInError) throw signInError;
+        if (user) onSuccess();
       }
-      onSuccess();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -81,6 +99,34 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
                 placeholder="Password"
               />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">I am a:</label>
+            <div className="mt-2 space-x-4">
+              <label className="inline-flex items-center">
+                <input
+                  type="radio"
+                  name="role"
+                  value="interviewer"
+                  checked={role === 'interviewer'}
+                  onChange={(e) => setRole(e.target.value as UserRole)}
+                  className="form-radio h-4 w-4 text-blue-600"
+                />
+                <span className="ml-2">Interviewer</span>
+              </label>
+              <label className="inline-flex items-center">
+                <input
+                  type="radio"
+                  name="role"
+                  value="candidate"
+                  checked={role === 'candidate'}
+                  onChange={(e) => setRole(e.target.value as UserRole)}
+                  className="form-radio h-4 w-4 text-blue-600"
+                />
+                <span className="ml-2">Candidate</span>
+              </label>
             </div>
           </div>
 
