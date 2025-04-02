@@ -15,10 +15,25 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
     password: '',
   });
 
+  const validatePassword = (password: string): string | null => {
+    if (password.length < 6) {
+      return 'Password must be at least 6 characters long';
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setError(null);
+
+    // Validate password
+    const passwordError = validatePassword(formData.password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       // Try to sign up first if in signup mode

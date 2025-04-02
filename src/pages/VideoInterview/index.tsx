@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Video, Calendar, Clock, User, Phone, PhoneOff, Mic, MicOff, Camera, CameraOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { WebRTCService } from '../../lib/webrtc';
+import { TestCall } from '../../components/TestCall';
 import type { Database } from '../../lib/database.types';
 
 type Interview = Database['public']['Tables']['interviews']['Row'];
@@ -23,19 +24,36 @@ export function VideoInterview() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<'interviewer' | 'candidate'>('interviewer');
 
   // Video call states
   const [isInCall, setIsInCall] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [showTestCall, setShowTestCall] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const webrtcRef = useRef<WebRTCService | null>(null);
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       try {
+        // Get current user's role
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          setUserRole(profile.role as 'interviewer' | 'candidate');
+        }
+
         if (id) {
           const { data: interviewData, error: interviewError } = await supabase
             .from('interviews')
@@ -81,6 +99,11 @@ export function VideoInterview() {
   }, [id]);
 
   const startVideoCall = async () => {
+    setShowTestCall(true);
+  };
+
+  const handleTestCallSuccess = async () => {
+    setShowTestCall(false);
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: true,
@@ -88,21 +111,25 @@ export function VideoInterview() {
       });
       
       setStream(mediaStream);
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = mediaStream;
-      }
 
       // Initialize WebRTC
       if (id) {
-        const userId = (await supabase.auth.getUser()).data.user?.id;
-        if (!userId) throw new Error('User not authenticated');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
 
         webrtcRef.current = new WebRTCService(
           id,
-          userId,
+          user.id,
+          userRole,
+          (localStream) => {
+            if (localVideoRef.current) {
+              localVideoRef.current.srcObject = localStream;
+            }
+          },
           (remoteStream) => {
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = remoteStream;
+              setHasRemoteVideo(!!remoteStream);
             }
           }
         );
@@ -113,6 +140,7 @@ export function VideoInterview() {
       setIsInCall(true);
     } catch (err) {
       setError('Failed to access camera and microphone');
+      console.error('Error starting video call:', err);
     }
   };
 
@@ -126,6 +154,7 @@ export function VideoInterview() {
       setStream(null);
     }
     setIsInCall(false);
+    setHasRemoteVideo(false);
   };
 
   const toggleMute = () => {
@@ -256,32 +285,43 @@ export function VideoInterview() {
     );
   }
 
-  if (!interview || !candidate) {
-    return (
-      <div className="bg-red-50 text-red-700 p-4 rounded-md">
-        Interview not found
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
+      {showTestCall && (
+        <TestCall
+          onClose={() => setShowTestCall(false)}
+          onSuccess={handleTestCallSuccess}
+        />
+      )}
+
       {isInCall && (
         <div className="fixed inset-0 bg-black z-50 flex flex-col">
           <div className="flex-1 relative">
-            <video
-              ref={remoteVideoRef}
-              className="w-full h-full object-cover"
-              autoPlay
-              playsInline
-            />
-            <video
-              ref={localVideoRef}
-              className="absolute bottom-4 right-4 w-64 h-48 object-cover rounded-lg shadow-lg"
-              autoPlay
-              playsInline
-              muted
-            />
+            {hasRemoteVideo ? (
+              <>
+                <video
+                  ref={remoteVideoRef}
+                  className="w-full h-full object-cover"
+                  autoPlay
+                  playsInline
+                />
+                <video
+                  ref={localVideoRef}
+                  className="absolute bottom-4 right-4 w-64 h-48 object-cover rounded-lg shadow-lg"
+                  autoPlay
+                  playsInline
+                  muted
+                />
+              </>
+            ) : (
+              <video
+                ref={localVideoRef}
+                className="w-full h-full object-cover"
+                autoPlay
+                playsInline
+                muted
+              />
+            )}
           </div>
           <div className="bg-gray-900 p-4 flex items-center justify-center space-x-4">
             <button
@@ -310,7 +350,7 @@ export function VideoInterview() {
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-medium text-gray-800">Video Interview</h3>
-            {!isInCall && interview.status === 'scheduled' && (
+            {!isInCall && interview?.status === 'scheduled' && (
               <button
                 onClick={startVideoCall}
                 className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -320,11 +360,11 @@ export function VideoInterview() {
               </button>
             )}
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              interview.status === 'completed' ? 'bg-green-100 text-green-800' :
-              interview.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+              interview?.status === 'completed' ? 'bg-green-100 text-green-800' :
+              interview?.status === 'cancelled' ? 'bg-red-100 text-red-800' :
               'bg-blue-100 text-blue-800'
             }`}>
-              {interview.status.toUpperCase()}
+              {interview?.status.toUpperCase()}
             </span>
           </div>
         </div>
@@ -334,13 +374,13 @@ export function VideoInterview() {
               <h4 className="text-sm font-medium text-gray-500 mb-2">Candidate Information</h4>
               <div className="space-y-2">
                 <p className="text-sm text-gray-900">
-                  <span className="font-medium">Name:</span> {candidate.name}
+                  <span className="font-medium">Name:</span> {candidate?.name}
                 </p>
                 <p className="text-sm text-gray-900">
-                  <span className="font-medium">Email:</span> {candidate.email}
+                  <span className="font-medium">Email:</span> {candidate?.email}
                 </p>
                 <p className="text-sm text-gray-900">
-                  <span className="font-medium">Experience:</span> {candidate.experience} years
+                  <span className="font-medium">Experience:</span> {candidate?.experience} years
                 </p>
               </div>
             </div>
@@ -349,7 +389,7 @@ export function VideoInterview() {
               <div className="space-y-2">
                 <p className="text-sm text-gray-900">
                   <span className="font-medium">Scheduled for:</span>{' '}
-                  {new Date(interview.scheduled_at).toLocaleString()}
+                  {interview && new Date(interview.scheduled_at).toLocaleString()}
                 </p>
                 <p className="text-sm text-gray-900">
                   <span className="font-medium">Type:</span> Video Interview
@@ -358,56 +398,58 @@ export function VideoInterview() {
             </div>
           </div>
 
-          <div className="border-t border-gray-200 pt-6">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Interview Score (0-100)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={score || ''}
-                  onChange={(e) => setScore(e.target.value ? parseInt(e.target.value) : null)}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  disabled={interview.status === 'completed'}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Feedback
-                </label>
-                <textarea
-                  rows={4}
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  disabled={interview.status === 'completed'}
-                  placeholder="Enter your feedback about the candidate's performance..."
-                />
-              </div>
-
-              {interview.status !== 'completed' && (
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => navigate(`/candidates/${candidate.id}`)}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving || !feedback || score === null}
-                    className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {isSaving ? 'Saving...' : 'Complete Interview'}
-                  </button>
+          {userRole === 'interviewer' && (
+            <div className="border-t border-gray-200 pt-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Interview Score (0-100)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={score || ''}
+                    onChange={(e) => setScore(e.target.value ? parseInt(e.target.value) : null)}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    disabled={interview?.status === 'completed'}
+                  />
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Feedback
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={feedback}
+                    onChange={(e) => setFeedback(e.target.value)}
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    disabled={interview?.status === 'completed'}
+                    placeholder="Enter your feedback about the candidate's performance..."
+                  />
+                </div>
+
+                {interview?.status !== 'completed' && (
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      onClick={() => navigate(`/candidates/${candidate?.id}`)}
+                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={isSaving || !feedback || score === null}
+                      className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isSaving ? 'Saving...' : 'Complete Interview'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
