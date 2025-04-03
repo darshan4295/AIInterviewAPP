@@ -24,6 +24,11 @@ export function TestCall({ onClose, onSuccess }: TestCallProps) {
 
   const startTest = async () => {
     try {
+      // Check if the required APIs are available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Your browser does not support media devices. Please use a modern browser.');
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
@@ -34,8 +39,15 @@ export function TestCall({ onClose, onSuccess }: TestCallProps) {
         videoRef.current.srcObject = mediaStream;
       }
 
+      // Check if AudioContext is available
+      if (typeof AudioContext === 'undefined' && typeof window.webkitAudioContext === 'undefined') {
+        console.warn('AudioContext not supported - audio level meter will not work');
+        return;
+      }
+
       // Set up audio analysis
-      audioContextRef.current = new AudioContext();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      audioContextRef.current = new AudioContextClass();
       analyserRef.current = audioContextRef.current.createAnalyser();
       const source = audioContextRef.current.createMediaStreamSource(mediaStream);
       source.connect(analyserRef.current);
@@ -57,7 +69,7 @@ export function TestCall({ onClose, onSuccess }: TestCallProps) {
       setError(
         err instanceof Error 
           ? err.message 
-          : 'Failed to access camera and microphone'
+          : 'Failed to access camera and microphone. Please ensure you have granted the necessary permissions.'
       );
     }
   };

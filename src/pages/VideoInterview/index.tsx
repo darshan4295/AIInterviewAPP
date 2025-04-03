@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { WebRTCService } from '../../lib/webrtc';
 import { TestCall } from '../../components/TestCall';
 import { VideoCall } from '../../components/VideoCall';
+import { TranscriptAnalysis } from '../../components/TranscriptAnalysis';
 import type { Database } from '../../lib/database.types';
 
 type Interview = Database['public']['Tables']['interviews']['Row'];
@@ -34,6 +35,7 @@ export function VideoInterview() {
   const [showTestCall, setShowTestCall] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [transcript, setTranscript] = useState<string>('');
   const webrtcRef = useRef<WebRTCService | null>(null);
 
   useEffect(() => {
@@ -169,6 +171,10 @@ export function VideoInterview() {
     }
   };
 
+  const handleTranscriptUpdate = (newTranscript: string) => {
+    setTranscript(newTranscript);
+  };
+
   const handleSave = async () => {
     if (!interview) return;
 
@@ -209,7 +215,7 @@ export function VideoInterview() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
       </div>
     );
   }
@@ -225,32 +231,32 @@ export function VideoInterview() {
   if (!id) {
     return (
       <div className="space-y-6">
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-800">Video Interviews</h3>
+        <div className="card">
+          <div className="card-header">
+            <h3 className="text-lg font-medium text-surface-900">Video Interviews</h3>
           </div>
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y divide-surface-200">
             {interviews.length === 0 ? (
-              <div className="px-6 py-8 text-center text-gray-500">
+              <div className="px-6 py-8 text-center text-surface-500">
                 No video interviews scheduled.
               </div>
             ) : (
               interviews.map((interview) => (
                 <div
                   key={interview.id}
-                  className="px-6 py-4 hover:bg-gray-50 cursor-pointer"
+                  className="px-6 py-4 hover:bg-surface-50 cursor-pointer"
                   onClick={() => navigate(`/interview/video/${interview.id}`)}
                 >
                   <div className="flex justify-between items-center">
                     <div className="flex items-center space-x-4">
                       <div className="flex-shrink-0">
-                        <Video className="h-6 w-6 text-gray-400" />
+                        <Video className="h-6 w-6 text-surface-400" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-sm font-medium text-surface-900">
                           {interview.candidates.name}
                         </p>
-                        <div className="mt-1 flex items-center space-x-4 text-sm text-gray-500">
+                        <div className="mt-1 flex items-center space-x-4 text-sm text-surface-500">
                           <div className="flex items-center">
                             <Calendar className="h-4 w-4 mr-1" />
                             {new Date(interview.scheduled_at).toLocaleDateString()}
@@ -265,7 +271,7 @@ export function VideoInterview() {
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                       interview.status === 'completed' ? 'bg-green-100 text-green-800' :
                       interview.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                      'bg-blue-100 text-blue-800'
+                      'bg-primary-100 text-primary-800'
                     }`}>
                       {interview.status.toUpperCase()}
                     </span>
@@ -297,17 +303,18 @@ export function VideoInterview() {
           onToggleMute={toggleMute}
           onToggleCamera={toggleCamera}
           onEndCall={endVideoCall}
+          onTranscriptUpdate={handleTranscriptUpdate}
         />
       )}
 
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
+      <div className="card">
+        <div className="card-header">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-medium text-gray-800">Video Interview</h3>
+            <h3 className="text-lg font-medium text-surface-900">Video Interview</h3>
             {!isInCall && interview?.status === 'scheduled' && (
               <button
                 onClick={startVideoCall}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="btn-primary flex items-center space-x-2"
               >
                 <Phone size={20} />
                 <span>Start Video Call</span>
@@ -316,47 +323,54 @@ export function VideoInterview() {
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               interview?.status === 'completed' ? 'bg-green-100 text-green-800' :
               interview?.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-              'bg-blue-100 text-blue-800'
+              'bg-primary-100 text-primary-800'
             }`}>
               {interview?.status.toUpperCase()}
             </span>
           </div>
         </div>
-        <div className="p-6 space-y-6">
+        <div className="card-body space-y-6">
           <div className="grid grid-cols-2 gap-6">
             <div>
-              <h4 className="text-sm font-medium text-gray-500 mb-2">Candidate Information</h4>
+              <h4 className="text-sm font-medium text-surface-500 mb-2">Candidate Information</h4>
               <div className="space-y-2">
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-surface-900">
                   <span className="font-medium">Name:</span> {candidate?.name}
                 </p>
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-surface-900">
                   <span className="font-medium">Email:</span> {candidate?.email}
                 </p>
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-surface-900">
                   <span className="font-medium">Experience:</span> {candidate?.experience} years
                 </p>
               </div>
             </div>
             <div>
-              <h4 className="text-sm font-medium text-gray-500 mb-2">Interview Details</h4>
+              <h4 className="text-sm font-medium text-surface-500 mb-2">Interview Details</h4>
               <div className="space-y-2">
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-surface-900">
                   <span className="font-medium">Scheduled for:</span>{' '}
                   {interview && new Date(interview.scheduled_at).toLocaleString()}
                 </p>
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-surface-900">
                   <span className="font-medium">Type:</span> Video Interview
                 </p>
               </div>
             </div>
           </div>
 
+          {transcript && (
+            <div className="border-t border-surface-200 pt-6">
+              <h4 className="text-lg font-medium text-surface-900 mb-4">Interview Analysis</h4>
+              <TranscriptAnalysis transcript={transcript} />
+            </div>
+          )}
+
           {userRole === 'interviewer' && (
-            <div className="border-t border-gray-200 pt-6">
+            <div className="border-t border-surface-200 pt-6">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-surface-700 mb-2">
                     Interview Score (0-100)
                   </label>
                   <input
@@ -365,20 +379,20 @@ export function VideoInterview() {
                     max="100"
                     value={score || ''}
                     onChange={(e) => setScore(e.target.value ? parseInt(e.target.value) : null)}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    className="input"
                     disabled={interview?.status === 'completed'}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-surface-700 mb-2">
                     Feedback
                   </label>
                   <textarea
                     rows={4}
                     value={feedback}
                     onChange={(e) => setFeedback(e.target.value)}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    className="input"
                     disabled={interview?.status === 'completed'}
                     placeholder="Enter your feedback about the candidate's performance..."
                   />
@@ -388,14 +402,14 @@ export function VideoInterview() {
                   <div className="flex justify-end space-x-3">
                     <button
                       onClick={() => navigate(`/candidates/${candidate?.id}`)}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                      className="btn-surface"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={handleSave}
                       disabled={isSaving || !feedback || score === null}
-                      className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                      className="btn-primary"
                     >
                       {isSaving ? 'Saving...' : 'Complete Interview'}
                     </button>

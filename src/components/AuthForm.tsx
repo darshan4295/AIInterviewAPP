@@ -1,64 +1,46 @@
 import React, { useState } from 'react';
 import { signIn, signUp, UserRole } from '../lib/auth';
+import { KeyRound, UserPlus } from 'lucide-react';
 
 interface AuthFormProps {
   onSuccess: () => void;
 }
 
 export function AuthForm({ onSuccess }: AuthFormProps) {
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [role, setRole] = useState<UserRole>('interviewer');
+  const [role, setRole] = useState<UserRole>('candidate');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
+    confirmPassword: ''
   });
-
-  const validatePassword = (password: string): string | null => {
-    if (password.length < 6) {
-      return 'Password must be at least 6 characters long';
-    }
-    return null;
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Validate password
-    const passwordError = validatePassword(formData.password);
-    if (passwordError) {
-      setError(passwordError);
+    if (mode === 'signup' && formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Try to sign up first if in signup mode
-      if (isSignUp) {
-        const { user, error: signUpError } = await signUp(formData.email, formData.password, role);
-        
-        // If user already exists, try to sign in instead
-        if (signUpError && (signUpError as any).code === 'user_already_exists') {
-          const { user: signInUser, error: signInError } = await signIn(formData.email, formData.password, role);
-          if (signInError) throw signInError;
-          if (signInUser) {
-            onSuccess();
-            return;
-          }
-        } else if (signUpError) {
-          throw signUpError;
+      const { user, error } = mode === 'signin'
+        ? await signIn(formData.email, formData.password)
+        : await signUp(formData.email, formData.password, role);
+
+      if (error) {
+        if (error.message.includes('rate limit') || error.message.includes('try again later')) {
+          throw new Error('Too many signup attempts. Please wait a moment and try again.');
         }
-        
-        if (user) onSuccess();
-      } else {
-        // Regular sign in
-        const { user, error: signInError } = await signIn(formData.email, formData.password, role);
-        if (signInError) throw signInError;
-        if (user) onSuccess();
+        throw error;
       }
+      
+      if (user) onSuccess();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -67,106 +49,144 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            {isSignUp ? 'Create your account' : 'Sign in to your account'}
-          </h2>
+    <div className="min-h-screen flex items-center justify-center relative bg-surface-100">
+      {/* Background pattern */}
+      <div className="absolute inset-0 bg-[conic-gradient(at_top_right,_var(--tw-gradient-stops))] from-primary-200 via-primary-100 to-surface-50 opacity-60" />
+      <div className="absolute inset-0" style={{
+        backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%230ea5e9' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+        backgroundSize: '30px 30px'
+      }} />
+
+      <div className="relative max-w-md w-full mx-4">
+        <div className="bg-white rounded-xl shadow-elevation-3 overflow-hidden">
+          <div className="px-8 py-6 bg-primary-600">
+            <div className="text-center">
+              {mode === 'signin' ? (
+                <KeyRound className="mx-auto h-12 w-12 text-white" />
+              ) : (
+                <UserPlus className="mx-auto h-12 w-12 text-white" />
+              )}
+              <h2 className="mt-4 text-3xl font-bold text-white">
+                {mode === 'signin' ? 'Welcome back' : 'Create account'}
+              </h2>
+              <p className="mt-2 text-sm text-primary-100">
+                {mode === 'signin' 
+                  ? 'Sign in to access your account' 
+                  : 'Sign up to get started with your journey'}
+              </p>
+            </div>
+          </div>
+
+          <div className="px-8 py-6">
+            {error && (
+              <div className="mb-6 bg-red-50 text-red-700 p-4 rounded-lg border border-red-100 shadow-sm">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div>
+                <label htmlFor="email-address" className="block text-sm font-medium text-surface-700 mb-1">
+                  Email address
+                </label>
+                <input
+                  id="email-address"
+                  name="email"
+                  type="text"
+                  required
+                  value={formData.email}
+                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  className="input"
+                  placeholder="Enter your email"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-surface-700 mb-1">
+                  Password
+                </label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  value={formData.password}
+                  onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                  className="input"
+                  placeholder="Enter your password"
+                />
+              </div>
+
+              {mode === 'signup' && (
+                <>
+                  <div>
+                    <label htmlFor="confirm-password" className="block text-sm font-medium text-surface-700 mb-1">
+                      Confirm password
+                    </label>
+                    <input
+                      id="confirm-password"
+                      name="confirmPassword"
+                      type="password"
+                      required
+                      value={formData.confirmPassword}
+                      onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      className="input"
+                      placeholder="Confirm your password"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-surface-700 mb-2">I am a:</label>
+                    <div className="mt-2 space-x-6">
+                      <label className="inline-flex items-center">
+                        <input
+                          type="radio"
+                          name="role"
+                          value="candidate"
+                          checked={role === 'candidate'}
+                          onChange={(e) => setRole(e.target.value as UserRole)}
+                          className="form-radio h-5 w-5 text-primary-600 focus:ring-primary-500 border-surface-300"
+                        />
+                        <span className="ml-2 text-surface-700">Candidate</span>
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="radio"
+                          name="role"
+                          value="interviewer"
+                          checked={role === 'interviewer'}
+                          onChange={(e) => setRole(e.target.value as UserRole)}
+                          className="form-radio h-5 w-5 text-primary-600 focus:ring-primary-500 border-surface-300"
+                        />
+                        <span className="ml-2 text-surface-700">Interviewer</span>
+                      </label>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="btn-primary w-full flex justify-center py-3"
+              >
+                {isLoading ? 'Processing...' : (mode === 'signin' ? 'Sign in' : 'Create account')}
+              </button>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
+                  className="text-sm text-primary-600 hover:text-primary-700 focus:outline-none focus:underline transition-colors duration-200"
+                >
+                  {mode === 'signin'
+                    ? "Don't have an account? Sign up"
+                    : 'Already have an account? Sign in'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-
-        {error && (
-          <div className="bg-red-50 text-red-700 p-4 rounded-md">
-            {error}
-          </div>
-        )}
-
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="email-address" className="sr-only">
-                Email address
-              </label>
-              <input
-                id="email-address"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={formData.email}
-                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={formData.password}
-                onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">I am a:</label>
-            <div className="mt-2 space-x-4">
-              <label className="inline-flex items-center">
-                <input
-                  type="radio"
-                  name="role"
-                  value="interviewer"
-                  checked={role === 'interviewer'}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="form-radio h-4 w-4 text-blue-600"
-                />
-                <span className="ml-2">Interviewer</span>
-              </label>
-              <label className="inline-flex items-center">
-                <input
-                  type="radio"
-                  name="role"
-                  value="candidate"
-                  checked={role === 'candidate'}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="form-radio h-4 w-4 text-blue-600"
-                />
-                <span className="ml-2">Candidate</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              {isLoading ? 'Processing...' : (isSignUp ? 'Sign up' : 'Sign in')}
-            </button>
-          </div>
-
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm text-blue-600 hover:text-blue-500"
-            >
-              {isSignUp
-                ? 'Already have an account? Sign in'
-                : "Don't have an account? Sign up"}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );
